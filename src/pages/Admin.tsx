@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { User } from 'firebase/auth';
 
 import { firebaseEnabled } from '../firebase/app';
-import { isAdmin, signInWithGoogle, signOutTeacher, subscribeUser } from '../firebase/auth';
+import { isTeacher, lockTeacher, subscribeUser, unlockTeacher } from '../firebase/auth';
 import { updateAppConfig } from '../firebase/config';
 import { deleteRecord, deleteSeasonRecords, listRecordsBySeason } from '../firebase/records';
 import { deleteStudent, listStudents, updateStudentName, type StudentRow } from '../firebase/students';
@@ -16,6 +16,8 @@ export function Admin() {
   const { config } = useApp();
   const [user, setUser] = useState<User | null>(null);
   const [admin, setAdmin] = useState<boolean | null>(null);
+  const [pin, setPin] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
   const [records, setRecords] = useState<GameRecord[]>([]);
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [season, setSeason] = useState(config.season);
@@ -29,13 +31,31 @@ export function Admin() {
       subscribeUser((next) => {
         setUser(next);
         if (!next) {
-          setAdmin(null);
+          setAdmin(false);
           return;
         }
-        void isAdmin(next.uid).then(setAdmin);
+        // 새로고침해도 열린 세션이면 그대로 들어간다.
+        void isTeacher(next.uid).then(setAdmin);
       }),
     [],
   );
+
+  async function handleUnlock(event: FormEvent) {
+    event.preventDefault();
+    if (!pin.trim() || unlocking) return;
+
+    setUnlocking(true);
+    setMessage(null);
+    const result = await unlockTeacher(pin.trim());
+    setUnlocking(false);
+
+    if (result.ok) {
+      setPin('');
+      setAdmin(true);
+      return;
+    }
+    setMessage(result.message);
+  }
 
   const reload = useCallback(async () => {
     setBusy(true);
@@ -65,46 +85,51 @@ export function Admin() {
     );
   }
 
-  if (!user) {
-    return (
-      <Shell>
-        <div className="card space-y-4 text-center">
-          <p className="text-slate-300">선생님 계정으로 로그인하세요.</p>
-          <button
-            type="button"
-            className="btn-primary w-full"
-            onClick={() => {
-              void signInWithGoogle().catch((error) => setMessage(error.message));
-            }}
-          >
-            Google 로그인
-          </button>
-          {message && <p className="text-xs text-rose-300">{message}</p>}
-        </div>
-      </Shell>
-    );
-  }
-
-  if (admin === false) {
-    return (
-      <Shell>
-        <div className="card space-y-3 text-center">
-          <p className="text-slate-300">이 계정({user.email})은 관리 권한이 없습니다.</p>
-          <p className="text-xs text-slate-500">
-            Firebase 콘솔에서 <code>admins/{user.uid}</code> 문서를 만들면 접근할 수 있습니다.
-          </p>
-          <button type="button" className="btn-ghost w-full" onClick={() => void signOutTeacher()}>
-            로그아웃
-          </button>
-        </div>
-      </Shell>
-    );
-  }
-
   if (admin === null) {
     return (
       <Shell>
-        <p className="card text-center text-sm text-slate-400">권한 확인 중…</p>
+        <p className="card text-center text-sm text-slate-400">확인 중…</p>
+      </Shell>
+    );
+  }
+
+  if (!admin) {
+    return (
+      <Shell>
+        <form className="card space-y-4" onSubmit={handleUnlock}>
+          <div className="text-center">
+            <p className="text-4xl" aria-hidden>🔒</p>
+            <p className="mt-2 font-bold">선생님 화면</p>
+            <p className="text-sm text-slate-400">핀 번호를 입력하세요.</p>
+          </div>
+
+          <input
+            type="password"
+            className="input text-center text-2xl tracking-[0.4em]"
+            inputMode="numeric"
+            autoComplete="off"
+            autoFocus
+            maxLength={12}
+            placeholder="••••••"
+            aria-label="핀 번호"
+            value={pin}
+            onChange={(event) => setPin(event.target.value)}
+          />
+
+          {message && (
+            <p role="alert" className="rounded-xl bg-rose-500/15 p-3 text-sm font-bold text-rose-300">
+              {message}
+            </p>
+          )}
+
+          <button type="submit" className="btn-primary w-full" disabled={!pin.trim() || unlocking}>
+            {unlocking ? '확인 중…' : '들어가기'}
+          </button>
+
+          <p className="text-center text-xs text-slate-500">
+            핀 번호는 Firebase 콘솔의 <code>config/secret</code> 문서에서 바꿀 수 있습니다.
+          </p>
+        </form>
       </Shell>
     );
   }
@@ -112,9 +137,15 @@ export function Admin() {
   return (
     <Shell>
       <div className="flex items-center justify-between text-sm">
-        <span className="text-slate-400">{user.email}</span>
-        <button type="button" className="underline text-slate-400" onClick={() => void signOutTeacher()}>
-          로그아웃
+        <span className="text-slate-400">{user?.email ?? '핀 번호로 접속 중'}</span>
+        <button
+          type="button"
+          className="underline text-slate-400"
+          onClick={() => {
+            void lockTeacher().then(() => setAdmin(false));
+          }}
+        >
+          잠그기
         </button>
       </div>
 
