@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(db)/documents/admins/$(request.auth.uid));
+    }
+    function validStudentId(id) { return id.matches('^1[0-9]{4}$'); }
+    function validName(n) { return n is string && n.size() >= 2 && n.size() <= 10; }
+    function minTime(level) {
+      return {'beginner': 1000, 'intermediate': 3000, 'expert': 8000}[level];
+    }
+
+    match /config/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /students/{studentId} {
+      allow read: if true;
+      allow create: if validStudentId(studentId)
+        && validName(request.resource.data.name)
+        && request.resource.data.keys().hasOnly(['name', 'classNo', 'createdAt'])
+        && request.resource.data.classNo is int
+        && request.resource.data.classNo >= 1
+        && request.resource.data.classNo <= 20;
+      allow update, delete: if isAdmin();
+    }
+
+    match /records/{recordId} {
+      function d() { return request.resource.data; }
+      function registeredName() {
+        return get(/databases/$(db)/documents/students/$(d().studentId)).data.name;
+      }
+      function common() {
+        return recordId == d().season + '_' + d().level + '_' + d().studentId
+          && d().level in ['beginner', 'intermediate', 'expert']
+          && d().name == registeredName()
+          && d().updatedAt == request.time
+          && d().keys().hasOnly(
+              ['season', 'level', 'studentId', 'name', 'classNo',
+               'plays', 'wins', 'bestTimeMs', 'bestAt', 'updatedAt']);
+      }
+
+      allow read: if true;
+
+      allow create: if common()
+        && d().plays == 1
+        && ((d().wins == 0 && d().bestTimeMs == null)
+          || (d().wins == 1 && d().bestTimeMs is int
+              && d().bestTimeMs >= minTime(d().level)));
+
+      // PRD 9.1 초안에서는 "승리했지만 최고 기록을 못 깬 판"을 저장할 수 없었다.
+      // (wins +1 분기가 항상 더 빠른 bestTimeMs 를 요구했기 때문)
+      // 아래처럼 "기록 유지" 경우를 함께 허용해야 실제 플레이와 맞는다.
+      allow update: if common()
+        && d().studentId == resource.data.studentId
+        && d().level == resource.data.level
+        && d().season == resource.data.season
+        && d().plays == resource.data.plays + 1
+        && (
+          // 패배: 승수·최고 기록 그대로
+          (d().wins == resource.data.wins
+            && d().bestTimeMs == resource.data.bestTimeMs)
+          // 승리: 승수 +1, 최고 기록은 유지하거나 더 빠른 값으로만 갱신
+          || (d().wins == resource.data.wins + 1
+            && (
+              (resource.data.bestTimeMs != null && d().bestTimeMs == resource.data.bestTimeMs)
+              || (d().bestTimeMs is int
+                && d().bestTimeMs >= minTime(d().level)
+                && (resource.data.bestTimeMs == null
+                    || d().bestTimeMs <= resource.data.bestTimeMs))
+            ))
+        );
+
+      allow delete: if isAdmin();
+    }
+  }
+}

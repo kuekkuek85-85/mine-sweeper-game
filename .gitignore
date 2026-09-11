@@ -13,3 +13,4 @@ dist-ssr
 .firebase
 .vercel
 coverage
+*.tsbuildinfo
