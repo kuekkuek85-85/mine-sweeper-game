@@ -35,6 +35,7 @@ function CellView({
   // 원리 보기 모드에서는 아직 순서가 오지 않은 칸을 닫힌 것처럼 보여 준다.
   const revealed = cell.state === 'revealed' && !pending;
   const flagged = cell.state === 'flagged';
+  const questioned = cell.state === 'question';
 
   const base =
     'relative flex select-none items-center justify-center font-bold leading-none transition-colors';
@@ -54,7 +55,7 @@ function CellView({
   return (
     <div
       role="gridcell"
-      aria-label={cellLabel(cell, revealed, flagged, wrongFlag)}
+      aria-label={cellLabel(cell, revealed, wrongFlag)}
       data-row={row}
       data-col={col}
       className={[
@@ -67,6 +68,7 @@ function CellView({
     >
       {flagged && !wrongFlag && <span aria-hidden>🚩</span>}
       {wrongFlag && <span aria-hidden>❌</span>}
+      {questioned && !revealed && <span aria-hidden className="text-slate-900">❓</span>}
       {revealed && cell.mine && <span aria-hidden>💣</span>}
       {revealed && !cell.mine && cell.adjacent > 0 && (
         <span className={`n-${cell.adjacent}`}>{cell.adjacent}</span>
@@ -75,9 +77,10 @@ function CellView({
   );
 }
 
-function cellLabel(cell: CellData, revealed: boolean, flagged: boolean, wrongFlag: boolean): string {
+function cellLabel(cell: CellData, revealed: boolean, wrongFlag: boolean): string {
   if (wrongFlag) return '잘못 꽂은 깃발';
-  if (flagged) return '깃발';
+  if (cell.state === 'flagged') return '깃발';
+  if (cell.state === 'question') return '물음표';
   if (!revealed) return '닫힌 칸';
   if (cell.mine) return '지뢰';
   return cell.adjacent === 0 ? '빈 칸' : `숫자 ${cell.adjacent}`;
