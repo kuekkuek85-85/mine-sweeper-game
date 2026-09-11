@@ -61,9 +61,16 @@ src/
 
 ### 에뮬레이터로 규칙 테스트
 
+보안 규칙 테스트(`tests/firestore.rules.test.ts`)는 Firestore 에뮬레이터를 자동으로 띄운 뒤 실행된다.
+로그인이나 실제 프로젝트 없이 동작하므로 배포 전에 먼저 돌려 보면 좋다.
+
 ```bash
-firebase emulators:start --only firestore,auth
+npm install -g firebase-tools   # 최초 1회, Java 필요
+npm run test:rules
 ```
+
+정상 저장 / 느린 기록으로 덮어쓰기 거절 / 다른 이름 거절 / 최소 시간 미만 거절을 포함한 24가지를 확인한다.
+규칙을 고쳤다면 배포 전에 이 명령이 통과하는지 확인한다.
 
 ## 배포 (Vercel)
 
