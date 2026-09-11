@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-slate-900 text-slate-100 antialiased;
+    /* iOS 주소창 높이 변화 대응 */
+    min-height: 100dvh;
+    overscroll-behavior-y: none;
+  }
+
+  /* 보드 안에서는 브라우저 기본 제스처를 쓰지 않는다 */
+  .no-touch-gestures {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-4 py-2
+      text-base font-bold transition active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100;
+  }
+
+  .btn-primary {
+    @apply btn bg-sky-500 text-white hover:bg-sky-400;
+  }
+
+  .btn-ghost {
+    @apply btn bg-slate-700/70 text-slate-100 hover:bg-slate-600;
+  }
+
+  .card {
+    @apply rounded-2xl border border-slate-700 bg-slate-800/70 p-4 shadow-lg;
+  }
+
+  .input {
+    @apply min-h-[48px] w-full rounded-xl border border-slate-600 bg-slate-900 px-4 text-lg
+      text-slate-100 placeholder:text-slate-500 focus:border-sky-400 focus:outline-none;
+  }
+
+  /* 상태바 숫자 (7세그먼트 느낌) */
+  .lcd {
+    @apply rounded-lg bg-slate-950 px-3 py-1 font-mono text-2xl font-bold tabular-nums text-rose-400;
+  }
+}
+
+/*
+ * 숫자 색상: 1~8을 서로 구분되는 색으로 쓰되,
+ * 색만으로 구분하지 않도록 숫자 자체를 굵게 표시한다. (접근성)
+ */
+.n-1 { color: #1d4ed8; }
+.n-2 { color: #15803d; }
+.n-3 { color: #b91c1c; }
+.n-4 { color: #6b21a8; }
+.n-5 { color: #b45309; }
+.n-6 { color: #0e7490; }
+.n-7 { color: #111827; }
+.n-8 { color: #6b7280; }
