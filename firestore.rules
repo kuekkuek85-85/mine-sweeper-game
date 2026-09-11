@@ -2,9 +2,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
 
+    // 교사 인증은 두 가지를 모두 인정한다.
+    //  1) teacherSessions — 핀 번호를 맞게 입력해서 연 세션 (기본 방식)
+    //  2) admins — 콘솔에서 직접 등록한 Google 계정 (비상용·기존 방식)
     function isAdmin() {
       return request.auth != null
-        && exists(/databases/$(db)/documents/admins/$(request.auth.uid));
+        && (exists(/databases/$(db)/documents/teacherSessions/$(request.auth.uid))
+          || exists(/databases/$(db)/documents/admins/$(request.auth.uid)));
     }
     function validStudentId(id) { return id.matches('^1[0-9]{4}$'); }
     function validName(n) { return n is string && n.size() >= 2 && n.size() <= 10; }
@@ -12,14 +16,30 @@ service cloud.firestore {
       return {'beginner': 1000, 'intermediate': 3000, 'expert': 8000}[level];
     }
 
+    // config/secret 은 교사 핀이 들어 있어 아무도 읽고 쓸 수 없다. (콘솔에서만 관리)
+    // 보안 규칙 안의 get() 은 읽기 권한과 상관없이 값을 볼 수 있어서 대조가 가능하다.
     match /config/{doc} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read: if doc != 'secret';
+      allow write: if isAdmin() && doc != 'secret';
     }
 
     match /admins/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow write: if false;
+    }
+
+    // 핀 번호로 여는 교사 세션.
+    // 만들 때 규칙이 서버에서 핀을 대조하므로, 핀이 앱 코드에 들어가지 않는다.
+    match /teacherSessions/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['pin', 'createdAt'])
+        && request.resource.data.pin is string
+        && request.resource.data.pin
+             == get(/databases/$(db)/documents/config/secret).data.pin;
+      allow update: if false;
+      allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
     match /students/{studentId} {

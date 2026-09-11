@@ -27,14 +27,14 @@ src/
 ├─ components/  Board, Cell, StatusBar, ControlBar, ResultModal
 ├─ pages/       Start, Home, Game, Dashboard, Admin
 ├─ hooks/       useGame, useCellInput, useMyRecords
-├─ firebase/    초기화, 기록 저장(트랜잭션), 대시보드 조회, 재전송 대기열, 교사 로그인
+├─ firebase/    초기화, 기록 저장(트랜잭션), 대시보드 조회, 재전송 대기열, 교사 핀 인증
 ├─ lib/         포맷·저장소·효과음
 └─ state/       학생 정보 / 설정 / config 공유
 ```
 
 ## Firebase 설정
 
-1. Firebase 콘솔에서 프로젝트를 만들고 **Firestore**와 **Authentication → Google 로그인**을 켠다.
+1. Firebase 콘솔에서 프로젝트를 만들고 **Firestore**를 켠다.
 2. 웹 앱을 등록해 SDK 설정값을 받아 `.env` 를 만든다. (`.env.example` 참고)
 
    ```bash
@@ -50,14 +50,31 @@ src/
    firebase deploy --only firestore
    ```
 
-4. 콘솔에서 초기 문서를 만든다.
+4. 콘솔에서 초기 문서를 만든다. 문서 ID는 **자동 ID가 아니라 직접 입력**해야 한다.
 
-   | 경로 | 내용 |
-   |---|---|
-   | `config/app` | `{ season: "2026-2", maskNames: true, gameOpen: true }` |
-   | `admins/{교사 UID}` | 아무 필드나 (예: `{ email: "..." }`) |
+   | 경로 | 내용 | 필수 |
+   |---|---|---|
+   | `config/secret` | `{ pin: "123456" }` — 교사 화면 핀 번호 | 필수 |
+   | `config/app` | `{ season: "2026-2", maskNames: true, gameOpen: true }` | 선택 |
 
-   교사 UID는 `/admin` 화면에서 Google 로그인하면 안내 문구에 표시된다.
+   `config/app` 은 없으면 기본값으로 동작하고, 교사 화면에서 설정을 한 번 바꾸면 자동으로 만들어진다.
+
+5. Authentication → Sign-in method 에서 **익명(Anonymous)** 로그인을 켠다.
+
+### 교사 화면 인증 방식
+
+Google 로그인 대신 **핀 번호**를 쓰되, 확인은 서버(보안 규칙)에서 한다.
+
+1. `/admin` 에서 핀을 입력하면 익명 로그인으로 uid 를 받는다
+2. `teacherSessions/{uid}` 문서를 핀과 함께 만들려고 시도한다
+3. 보안 규칙이 `config/secret` 의 핀과 대조해, **맞을 때만** 문서 생성을 허용한다
+4. 기록 삭제·설정 변경 규칙은 이 세션 문서가 있는지로 교사를 판단한다
+
+덕분에 **핀이 앱 코드에 들어가지 않고**(`config/secret` 은 규칙에서 `allow read: if false`),
+콘솔에서 값만 바꾸면 재배포 없이 핀을 바꿀 수 있다.
+콘솔에서 `admins/{uid}` 를 직접 등록한 계정도 그대로 교사로 인정한다. (비상용)
+
+> 핀은 숫자 6자리보다 길게 잡는 편이 안전하다. 학생이 여러 번 시도해 볼 수 있기 때문이다.
 
 ### 에뮬레이터로 규칙 테스트
 
@@ -69,7 +86,8 @@ npm install -g firebase-tools   # 최초 1회, Java 필요
 npm run test:rules
 ```
 
-정상 저장 / 느린 기록으로 덮어쓰기 거절 / 다른 이름 거절 / 최소 시간 미만 거절을 포함한 24가지를 확인한다.
+정상 저장 / 느린 기록으로 덮어쓰기 거절 / 다른 이름 거절 / 최소 시간 미만 거절과
+교사 핀 인증까지 포함해 33가지를 확인한다.
 규칙을 고쳤다면 배포 전에 이 명령이 통과하는지 확인한다.
 
 ## 배포 (Vercel)
@@ -82,7 +100,9 @@ npm run test:rules
 
 ```
 config/app                              앱 설정 (시즌, 이름 마스킹, 게임 열기)
-admins/{uid}                            교사 계정 (콘솔에서 직접 등록)
+config/secret                           교사 화면 핀 번호 (앱에서는 읽을 수 없음)
+teacherSessions/{uid}                   핀으로 연 교사 세션
+admins/{uid}                            교사 계정 (콘솔에서 직접 등록, 비상용)
 students/{studentId}                    학번-이름 등록 정보
 records/{season}_{level}_{studentId}    학생별·난이도별 기록 (시즌마다 1개)
 ```
@@ -105,6 +125,7 @@ records/{season}_{level}_{studentId}    학생별·난이도별 기록 (시즌�
 |---|---|
 | 난이도(크기·지뢰 수) 조정 | `src/game/levels.ts` |
 | 순위 초기화 | `/admin` → 시즌 값 변경 |
+| 교사 화면 핀 번호 변경 | Firebase 콘솔 → `config/secret` 의 `pin` (재배포 불필요) |
 | 수업 외 시간 차단 | `/admin` → 게임 열기 끄기 |
 | 이름 공개/마스킹 | `/admin` → 이름 마스킹 |
 | 교실 TV 순위표 | `/dashboard?tv=1` (난이도 10초마다 자동 순환) |
@@ -113,7 +134,7 @@ records/{season}_{level}_{studentId}    학생별·난이도별 기록 (시즌�
 ## 수업 전 점검
 
 - [ ] `config/app` 의 `season` 이 이번 학기 값인지
-- [ ] `admins` 에 교사 UID가 등록되어 있는지
+- [ ] `config/secret` 에 이번 학기 핀 번호가 설정되어 있는지
 - [ ] `gameOpen` 이 `true` 인지
 - [ ] 교실 TV에 `/dashboard?tv=1` 이 떠 있는지
 - [ ] 깃발 모드 버튼 사용법을 시연했는지

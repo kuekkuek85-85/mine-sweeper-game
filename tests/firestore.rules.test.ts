@@ -19,6 +19,7 @@ const SEASON = '2026-2';
 const STUDENT_ID = '10101';
 const OTHER_ID = '10102';
 const ADMIN_UID = 'teacher-uid';
+const TEACHER_PIN = '123456';
 
 let env: RulesTestEnvironment;
 
@@ -77,6 +78,7 @@ beforeEach(async () => {
     await setDoc(doc(db, 'students', OTHER_ID), { name: '김철수', classNo: 1, createdAt: new Date() });
     await setDoc(doc(db, 'admins', ADMIN_UID), { email: 'teacher@school.kr' });
     await setDoc(doc(db, 'config', 'app'), { season: SEASON, maskNames: true, gameOpen: true });
+    await setDoc(doc(db, 'config', 'secret'), { pin: TEACHER_PIN });
   });
 });
 
@@ -265,6 +267,92 @@ describe('config / admins', () => {
   it('교사가 아닌 로그인 계정은 관리 권한이 없다', async () => {
     const outsider = env.authenticatedContext('stranger-uid').firestore();
     await assertFails(updateDoc(doc(outsider, 'config', 'app'), { gameOpen: false }));
+  });
+});
+
+describe('교사 핀 번호 인증', () => {
+  /** 익명 로그인한 사용자를 흉내 낸다. */
+  function anonDb(uid: string) {
+    return env.authenticatedContext(uid).firestore();
+  }
+
+  it('핀이 맞으면 교사 세션이 열린다', async () => {
+    const db = anonDb('anon-1');
+    await assertSucceeds(
+      setDoc(doc(db, 'teacherSessions', 'anon-1'), { pin: TEACHER_PIN, createdAt: serverTimestamp() }),
+    );
+  });
+
+  it('핀이 틀리면 세션이 열리지 않는다', async () => {
+    const db = anonDb('anon-2');
+    await assertFails(
+      setDoc(doc(db, 'teacherSessions', 'anon-2'), { pin: '000000', createdAt: serverTimestamp() }),
+    );
+  });
+
+  it('핀은 앱에서 읽을 수 없다 (규칙 안에서만 대조)', async () => {
+    await assertFails(getDoc(doc(studentDb(), 'config', 'secret')));
+    await assertFails(getDoc(doc(adminDb(), 'config', 'secret')));
+  });
+
+  it('교사도 핀 문서를 바꿀 수 없다 (콘솔에서만)', async () => {
+    await assertFails(setDoc(doc(adminDb(), 'config', 'secret'), { pin: '999999' }));
+  });
+
+  it('남의 uid 로는 세션을 만들 수 없다', async () => {
+    const db = anonDb('anon-3');
+    await assertFails(
+      setDoc(doc(db, 'teacherSessions', 'anon-4'), { pin: TEACHER_PIN, createdAt: serverTimestamp() }),
+    );
+  });
+
+  it('로그인하지 않으면 핀이 맞아도 세션을 열 수 없다', async () => {
+    await assertFails(
+      setDoc(doc(studentDb(), 'teacherSessions', 'nobody'), {
+        pin: TEACHER_PIN,
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('세션을 나중에 고쳐서 권한을 유지할 수 없다', async () => {
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'teacherSessions', 'anon-5'), {
+        pin: TEACHER_PIN,
+        createdAt: new Date(),
+      });
+    });
+    const { updateDoc: update } = await import('firebase/firestore');
+    await assertFails(update(doc(anonDb('anon-5'), 'teacherSessions', 'anon-5'), { pin: 'x' }));
+  });
+
+  it('핀으로 연 세션은 교사 권한을 가진다 (기록 삭제·설정 변경)', async () => {
+    const db = anonDb('anon-6');
+    await setDoc(doc(db, 'teacherSessions', 'anon-6'), {
+      pin: TEACHER_PIN,
+      createdAt: serverTimestamp(),
+    });
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'records', recordId('beginner')), {
+        ...recordData(),
+        bestAt: new Date(),
+        updatedAt: new Date(),
+      });
+    });
+    const { deleteDoc } = await import('firebase/firestore');
+    await assertSucceeds(deleteDoc(doc(db, 'records', recordId('beginner'))));
+    await assertSucceeds(updateDoc(doc(db, 'config', 'app'), { gameOpen: false }));
+  });
+
+  it('세션을 닫으면 권한이 사라진다', async () => {
+    const db = anonDb('anon-7');
+    await setDoc(doc(db, 'teacherSessions', 'anon-7'), {
+      pin: TEACHER_PIN,
+      createdAt: serverTimestamp(),
+    });
+    const { deleteDoc } = await import('firebase/firestore');
+    await assertSucceeds(deleteDoc(doc(db, 'teacherSessions', 'anon-7')));
+    await assertFails(updateDoc(doc(db, 'config', 'app'), { gameOpen: false }));
   });
 });
 
