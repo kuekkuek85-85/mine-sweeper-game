@@ -107,6 +107,7 @@ export function Game() {
   const input = useCellInput({
     onOpen: game.open,
     onFlag: game.flag,
+    onChord: game.chordAt,
     flagMode,
     disabled: game.state.status === 'won' || game.state.status === 'lost' || game.animating,
   });

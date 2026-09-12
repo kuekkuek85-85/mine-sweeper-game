@@ -43,6 +43,8 @@ export interface UseGame {
   animating: boolean;
   open: (row: number, col: number) => void;
   flag: (row: number, col: number) => void;
+  /** 코드 열기만 수행한다. (양클릭용 — 닫힌 칸에서는 아무 일도 하지 않는다) */
+  chordAt: (row: number, col: number) => void;
   reset: (level?: LevelId) => void;
 }
 
@@ -156,6 +158,26 @@ export function useGame(level: LevelId, options: UseGameOptions): UseGame {
     [sound, explain, animateOpened],
   );
 
+  /** 양클릭 전용. open() 과 달리 닫힌 칸을 실수로 열지 않는다. */
+  const chordAt = useCallback(
+    (row: number, col: number) => {
+      const result = chord(stateRef.current, row, col);
+
+      if (result.blocked) {
+        setBlockedCell({ row, col });
+        playTone('blocked', sound);
+        return;
+      }
+      if (!result.changed) return;
+
+      setBlockedCell(null);
+      playTone('open', sound);
+      setState(result.state);
+      if (explain) animateOpened(result.opened);
+    },
+    [sound, explain, animateOpened],
+  );
+
   const flag = useCallback(
     (row: number, col: number) => {
       const result = toggleFlag(stateRef.current, row, col, questionMark);
@@ -186,6 +208,7 @@ export function useGame(level: LevelId, options: UseGameOptions): UseGame {
     animating: pendingCells.size > 0,
     open,
     flag,
+    chordAt,
     reset,
   };
 }
