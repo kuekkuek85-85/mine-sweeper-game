@@ -30,7 +30,6 @@ export function Board({ state, size, input, pendingCells, focusCell, blockedCell
               key={colIndex}
               onPointerDown={(event) => input.onPointerDown(event, rowIndex, colIndex)}
               onPointerUp={(event) => input.onPointerUp(event, rowIndex, colIndex)}
-              onMouseDown={(event) => input.onMouseDown(event, rowIndex, colIndex)}
             >
               <Cell
                 cell={cell}
