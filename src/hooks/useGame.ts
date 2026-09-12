@@ -25,6 +25,8 @@ export interface UseGameOptions {
   vibrate: boolean;
   /** 원리 보기 모드 */
   explain: boolean;
+  /** 물음표(?) 표시 사용 */
+  questionMark: boolean;
   onFinish?: (state: GameState) => void;
 }
 
@@ -45,7 +47,7 @@ export interface UseGame {
 }
 
 export function useGame(level: LevelId, options: UseGameOptions): UseGame {
-  const { sound, vibrate: vibrateOn, explain, onFinish } = options;
+  const { sound, vibrate: vibrateOn, explain, questionMark, onFinish } = options;
 
   const [state, setState] = useState<GameState>(() => createGame(level, randomSeed()));
   const [now, setNow] = useState(() => Date.now());
@@ -156,13 +158,13 @@ export function useGame(level: LevelId, options: UseGameOptions): UseGame {
 
   const flag = useCallback(
     (row: number, col: number) => {
-      const result = toggleFlag(stateRef.current, row, col);
+      const result = toggleFlag(stateRef.current, row, col, questionMark);
       if (!result.changed) return;
       playTone('flag', sound);
       vibrate(30, vibrateOn);
       setState(result.state);
     },
-    [sound, vibrateOn],
+    [sound, vibrateOn, questionMark],
   );
 
   // 막힘 강조는 잠깐만 보여 준다.

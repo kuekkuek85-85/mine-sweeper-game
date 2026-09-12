@@ -98,6 +98,7 @@ export function Game() {
     sound: settings.sound,
     vibrate: settings.vibrate,
     explain,
+    questionMark: settings.questionMark,
     onFinish: handleFinish,
   });
 

@@ -20,9 +20,16 @@ export interface Settings {
   vibrate: boolean;
   /** 원리 보기 모드: 연쇄 열기를 한 칸씩 보여 준다. 이 모드의 판은 기록하지 않는다. */
   explain: boolean;
+  /** 물음표(?) 표시: 깃발을 한 번 더 누르면 ❓ 가 된다. */
+  questionMark: boolean;
 }
 
-const DEFAULT_SETTINGS: Settings = { sound: true, vibrate: true, explain: false };
+const DEFAULT_SETTINGS: Settings = {
+  sound: true,
+  vibrate: true,
+  explain: false,
+  questionMark: true,
+};
 
 interface AppContextValue {
   student: Student | null;

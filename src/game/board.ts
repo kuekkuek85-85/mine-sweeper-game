@@ -9,7 +9,12 @@
 import { getLevel, type LevelId } from './levels';
 import { createRng, shuffle } from './rng';
 
-export type CellState = 'hidden' | 'revealed' | 'flagged';
+/**
+ * 칸 상태.
+ * `question` 은 "여기가 지뢰인지 헷갈린다"는 표시일 뿐이라 열기를 막지 않는다.
+ * (Windows 지뢰찾기와 같은 동작)
+ */
+export type CellState = 'hidden' | 'revealed' | 'flagged' | 'question';
 
 export interface Cell {
   mine: boolean;
@@ -98,6 +103,11 @@ export function getNeighbors(board: Board, row: number, col: number): Coord[] {
     }
   }
   return result;
+}
+
+/** 아직 열 수 있는 칸인가. 물음표는 표시일 뿐이라 열 수 있다. */
+export function isOpenable(cell: Cell): boolean {
+  return cell.state === 'hidden' || cell.state === 'question';
 }
 
 export function inBounds(board: Board, row: number, col: number): boolean {
@@ -194,7 +204,7 @@ export function reveal(state: GameState, row: number, col: number, now: number =
   if (state.status === 'won' || state.status === 'lost') return unchanged(state);
 
   const cellBefore = state.board[row][col];
-  if (cellBefore.state !== 'hidden') return unchanged(state);
+  if (!isOpenable(cellBefore)) return unchanged(state);
 
   let next: GameState = { ...state };
 
@@ -225,8 +235,20 @@ export function reveal(state: GameState, row: number, col: number, now: number =
   return { state: next, opened, changed: opened.length > 0, blocked: false };
 }
 
-/** 깃발 토글. 판이 끝난 뒤에는 동작하지 않는다. */
-export function toggleFlag(state: GameState, row: number, col: number): ActionResult {
+/**
+ * 깃발 토글. 판이 끝난 뒤에는 동작하지 않는다.
+ *
+ * `allowQuestion` 이 켜져 있으면 닫힘 → 🚩 → ❓ → 닫힘 으로 세 단계를 돈다.
+ * 꺼져 있으면 닫힘 → 🚩 → 닫힘 두 단계만 돈다. (PRD 3.4의 조작 단순화)
+ *
+ * 물음표는 "헷갈린다"는 표시일 뿐이라 남은 지뢰 수에 세지 않고, 열기도 막지 않는다.
+ */
+export function toggleFlag(
+  state: GameState,
+  row: number,
+  col: number,
+  allowQuestion = false,
+): ActionResult {
   if (!inBounds(state.board, row, col)) return unchanged(state);
   if (state.status !== 'playing' && state.status !== 'ready') return unchanged(state);
 
@@ -234,13 +256,18 @@ export function toggleFlag(state: GameState, row: number, col: number): ActionRe
   if (cell.state === 'revealed') return unchanged(state);
 
   const next: GameState = { ...state, board: cloneBoard(state.board) };
+  const target = next.board[row][col];
+
   if (cell.state === 'flagged') {
-    next.board[row][col].state = 'hidden';
+    target.state = allowQuestion ? 'question' : 'hidden';
     next.flags -= 1;
+  } else if (cell.state === 'question') {
+    target.state = 'hidden';
   } else {
-    next.board[row][col].state = 'flagged';
+    target.state = 'flagged';
     next.flags += 1;
   }
+
   return { state: next, opened: [], changed: true, blocked: false };
 }
 
@@ -262,7 +289,7 @@ export function chord(state: GameState, row: number, col: number, now: number = 
     return { state, opened: [], changed: false, blocked: true };
   }
 
-  const targets = neighbors.filter((n) => state.board[n.row][n.col].state === 'hidden');
+  const targets = neighbors.filter((n) => isOpenable(state.board[n.row][n.col]));
   if (targets.length === 0) return unchanged(state);
 
   let next: GameState = { ...state, board: cloneBoard(state.board) };
@@ -339,7 +366,7 @@ function floodReveal(next: GameState, starts: Coord[], opened: Coord[]): void {
 
   for (const start of starts) {
     const key = start.row * cols + start.col;
-    if (board[start.row][start.col].state === 'hidden' && !queued.has(key)) {
+    if (isOpenable(board[start.row][start.col]) && !queued.has(key)) {
       queued.add(key);
       queue.push(start);
     }
@@ -348,7 +375,7 @@ function floodReveal(next: GameState, starts: Coord[], opened: Coord[]): void {
   for (let head = 0; head < queue.length; head += 1) {
     const { row, col } = queue[head];
     const cell = board[row][col];
-    if (cell.state !== 'hidden') continue;
+    if (!isOpenable(cell)) continue;
 
     cell.state = 'revealed';
     opened.push({ row, col });
@@ -359,7 +386,7 @@ function floodReveal(next: GameState, starts: Coord[], opened: Coord[]): void {
       const key = n.row * cols + n.col;
       const neighbor = board[n.row][n.col];
       // 깃발이 꽂힌 칸은 연쇄 열기에서 제외한다.
-      if (neighbor.state === 'hidden' && !queued.has(key)) {
+      if (isOpenable(neighbor) && !queued.has(key)) {
         queued.add(key);
         queue.push(n);
       }
@@ -373,7 +400,7 @@ function finishLost(next: GameState, now: number): GameState {
     for (let col = 0; col < board[row].length; col += 1) {
       const cell = board[row][col];
       // 지뢰는 모두 공개한다. 단, 깃발을 꽂아 맞힌 칸은 깃발 그대로 둔다.
-      if (cell.mine && cell.state === 'hidden') {
+      if (cell.mine && isOpenable(cell)) {
         cell.state = 'revealed';
       }
     }

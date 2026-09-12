@@ -260,6 +260,98 @@ describe('toggleFlag', () => {
   });
 });
 
+describe('물음표(?) 표시', () => {
+  it('닫힘 → 깃발 → 물음표 → 닫힘 순으로 돈다', () => {
+    let state = gameWith('beginner', [[0, 0]]);
+    state = toggleFlag(state, 3, 3, true).state;
+    expect(state.board[3][3].state).toBe('flagged');
+    state = toggleFlag(state, 3, 3, true).state;
+    expect(state.board[3][3].state).toBe('question');
+    state = toggleFlag(state, 3, 3, true).state;
+    expect(state.board[3][3].state).toBe('hidden');
+  });
+
+  it('끄면 닫힘 → 깃발 → 닫힘 두 단계만 돈다', () => {
+    let state = gameWith('beginner', [[0, 0]]);
+    state = toggleFlag(state, 3, 3, false).state;
+    expect(state.board[3][3].state).toBe('flagged');
+    state = toggleFlag(state, 3, 3, false).state;
+    expect(state.board[3][3].state).toBe('hidden');
+  });
+
+  it('물음표는 남은 지뢰 수에 세지 않는다', () => {
+    let state = gameWith('beginner', [[0, 0]]);
+    state = toggleFlag(state, 3, 3, true).state;
+    expect(remainingMines(state)).toBe(9);
+    state = toggleFlag(state, 3, 3, true).state; // 물음표
+    expect(state.flags).toBe(0);
+    expect(remainingMines(state)).toBe(10);
+  });
+
+  it('물음표 칸은 열 수 있다 (깃발과 다른 점)', () => {
+    let state = gameWith('beginner', [[0, 0]]);
+    state = toggleFlag(state, 1, 1, true).state;
+    state = toggleFlag(state, 1, 1, true).state; // 물음표
+    const result = reveal(state, 1, 1, 0);
+    expect(result.changed).toBe(true);
+    expect(result.state.board[1][1].state).toBe('revealed');
+  });
+
+  it('연쇄 열기도 물음표 칸을 연다', () => {
+    let state = gameWith('beginner', [[8, 8]]);
+    state = toggleFlag(state, 0, 1, true).state;
+    state = toggleFlag(state, 0, 1, true).state; // 물음표
+    const { state: next, opened } = reveal(state, 0, 0, 0);
+    expect(opened.some((c) => c.row === 0 && c.col === 1)).toBe(true);
+    expect(next.board[0][1].state).toBe('revealed');
+  });
+
+  it('물음표 칸의 지뢰를 열면 패배한다', () => {
+    let state = gameWith('beginner', [[0, 0]]);
+    state = toggleFlag(state, 0, 0, true).state;
+    state = toggleFlag(state, 0, 0, true).state; // 물음표
+    const result = reveal(state, 0, 0, 3_000);
+    expect(result.state.status).toBe('lost');
+    expect(result.state.explodedAt).toEqual({ row: 0, col: 0 });
+  });
+
+  it('코드 열기에서 물음표는 깃발로 세지 않는다', () => {
+    // (0,0),(0,2) 지뢰 → (1,1)은 숫자 2
+    let state = gameWith('beginner', [
+      [0, 0],
+      [0, 2],
+    ]);
+    state = reveal(state, 1, 1, 0).state;
+    state = toggleFlag(state, 0, 0, true).state; // 깃발
+    state = toggleFlag(state, 0, 2, true).state;
+    state = toggleFlag(state, 0, 2, true).state; // 물음표 → 깃발 1개뿐
+
+    const result = chord(state, 1, 1, 0);
+    expect(result.blocked).toBe(true);
+  });
+
+  it('패배해도 물음표는 잘못 꽂은 깃발로 표시하지 않는다', () => {
+    let state = gameWith('beginner', [
+      [0, 0],
+      [5, 5],
+    ]);
+    state = toggleFlag(state, 3, 3, true).state;
+    state = toggleFlag(state, 3, 3, true).state; // 지뢰 아닌 칸에 물음표
+    const lost = reveal(state, 0, 0, 0).state;
+    expect(isWrongFlag(lost, 3, 3)).toBe(false);
+  });
+
+  it('승리하면 물음표가 붙어 있던 지뢰도 깃발로 바뀐다', () => {
+    let state = gameWith('beginner', [[0, 0]]);
+    state = toggleFlag(state, 0, 0, true).state;
+    state = toggleFlag(state, 0, 0, true).state; // 지뢰에 물음표
+    const won = reveal(state, 8, 8, 0).state;
+    expect(won.status).toBe('won');
+    expect(won.board[0][0].state).toBe('flagged');
+    expect(remainingMines(won)).toBe(9);
+  });
+});
+
 describe('chord (코드 열기)', () => {
   function twoMineGame() {
     // (0,0), (0,2) 지뢰 → (1,1)의 숫자는 2

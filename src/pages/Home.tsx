@@ -98,6 +98,12 @@ export function Home() {
           onChange={(value) => updateSettings({ vibrate: value })}
         />
         <Toggle
+          label="물음표(?) 표시"
+          hint="깃발을 한 번 더 누르면 ❓ 로 바뀝니다. 헷갈리는 칸을 표시해 두는 용도예요."
+          checked={settings.questionMark}
+          onChange={(value) => updateSettings({ questionMark: value })}
+        />
+        <Toggle
           label="원리 보기 모드"
           hint="연쇄 열기를 한 칸씩 보여 줍니다. 이 모드의 판은 기록하지 않아요."
           checked={settings.explain}
