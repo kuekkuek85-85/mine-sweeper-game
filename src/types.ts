@@ -10,13 +10,11 @@ export interface Student {
 /** `config/app` 문서 */
 export interface AppConfig {
   season: string;
-  maskNames: boolean;
   gameOpen: boolean;
 }
 
 export const DEFAULT_APP_CONFIG: AppConfig = {
   season: '2026-2',
-  maskNames: true,
   gameOpen: true,
 };
 
