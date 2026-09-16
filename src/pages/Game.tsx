@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 
 import { Board } from '../components/Board';
@@ -16,15 +16,24 @@ import { useMyRecords } from '../hooks/useMyRecords';
 import { useApp } from '../state/AppContext';
 import type { PendingResult, SaveStatus } from '../types';
 
-/** 칸 최소 크기: 터치 기기 36px, PC 28px (PRD 6.5) */
-const MIN_TOUCH = 36;
-const MIN_MOUSE = 28;
-const MAX_FIT = 48;
-const MAX_ZOOM = 64;
+/**
+ * 보드는 항상 화면 안에 들어가게 칸 크기를 계산한다.
+ *
+ * PRD 6.5는 "칸 최소 36px, 안 들어가면 스크롤"이었지만, 실제 수업에서
+ * 스크롤 때문에 조작이 불편하다는 의견이 있어 **스크롤 없이 맞추는 쪽**으로 바꿨다.
+ * 대신 칸이 작아질 수 있다. (고급 16×16 을 좁은 스마트폰에서 열 때)
+ */
+const MAX_CELL = 48;
+/** 이보다 작아지면 누르기가 너무 어려워, 아주 좁은 화면에서만 쓰이는 하한 */
+const MIN_CELL = 18;
+/** 보드 자체의 테두리 여백(p-1 → 좌우 4px씩) + 반올림 여유 */
+const BOARD_CHROME = 10;
 
-function isTouchDevice(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
-}
+/*
+ * 화면이 낮으면(주로 스마트폰 가로 모드) 상태바·조작바가 보드 왼쪽으로 간다.
+ * 위아래로 쌓으면 보드에 남는 높이가 200px 남짓이라 칸이 너무 작아지기 때문이다. (PRD 6.5)
+ * 배치는 src/index.css 의 .game-layout 그리드가 담당한다.
+ */
 
 export function Game() {
   const { level: levelParam } = useParams();
@@ -32,10 +41,9 @@ export function Game() {
   const { student, settings, config, setQueuedCount } = useApp();
 
   const [flagMode, setFlagMode] = useState(false);
-  const [zoom, setZoom] = useState(0);
-  const [viewportWidth, setViewportWidth] = useState(() =>
-    typeof window === 'undefined' ? 360 : window.innerWidth,
-  );
+  // 보드가 들어갈 영역의 실제 크기. 여기에 맞춰 칸 크기를 정한다.
+  const boardAreaRef = useRef<HTMLDivElement>(null);
+  const [area, setArea] = useState({ width: 0, height: 0 });
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [rank, setRank] = useState<number | null>(null);
   const [isNewBest, setIsNewBest] = useState(false);
@@ -121,15 +129,27 @@ export function Game() {
     }
   }, [game.state.status, level, records]);
 
-  useEffect(() => {
-    const onResize = () => setViewportWidth(window.innerWidth);
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onResize);
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onResize);
-    };
+  // 화면 회전·주소창 높이 변화까지 잡으려면 창 크기보다 실제 영역을 재는 편이 정확하다.
+  useLayoutEffect(() => {
+    const element = boardAreaRef.current;
+    if (!element) return;
+
+    const measure = () => setArea({ width: element.clientWidth, height: element.clientHeight });
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
+
+  /** 가로·세로 모두 들어가는 가장 큰 칸 크기 */
+  const size = useMemo(() => {
+    const spec = LEVELS[isLevelId(levelParam) ? levelParam : 'beginner'];
+    if (area.width === 0 || area.height === 0) return MIN_CELL;
+    const byWidth = Math.floor((area.width - BOARD_CHROME) / spec.cols);
+    const byHeight = Math.floor((area.height - BOARD_CHROME) / spec.rows);
+    return Math.max(MIN_CELL, Math.min(MAX_CELL, byWidth, byHeight));
+  }, [area, levelParam]);
 
   // R 키로 새 게임
   useEffect(() => {
@@ -143,18 +163,11 @@ export function Game() {
   if (!level) return <Navigate to="/home" replace />;
 
   const spec = LEVELS[level];
-  const touch = isTouchDevice();
-  const minSize = touch ? MIN_TOUCH : MIN_MOUSE;
-  // 화면에 다 들어가면 폭에 맞춰 키우고, 안 들어가면 최소 크기로 두고 스크롤한다.
-  const fitted = Math.floor((Math.min(viewportWidth, 720) - 32) / spec.cols);
-  const baseSize = Math.min(MAX_FIT, Math.max(minSize, fitted));
-  const size = Math.min(MAX_ZOOM, Math.max(minSize, baseSize + zoom));
-
   const finished = game.state.status === 'won' || game.state.status === 'lost';
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col gap-3 p-3">
-      <header className="flex items-center justify-between">
+    <main className="game-layout mx-auto h-dvh w-full max-w-5xl overflow-hidden p-3">
+      <header className="game-head flex items-center justify-between">
         <Link to="/home" className="text-sm text-slate-400 underline">
           ← 홈
         </Link>
@@ -166,41 +179,38 @@ export function Game() {
         </Link>
       </header>
 
-      <StatusBar
-        remaining={game.remaining}
-        elapsedMs={game.elapsed}
-        status={game.state.status}
-        pressing={input.pressed !== null}
-        onReset={() => game.reset()}
-      />
-
-      {explain && (
-        <p className="rounded-xl bg-sky-500/15 p-2 text-center text-xs font-bold text-sky-300">
-          원리 보기 모드 — 빈칸을 찾으면 이웃 8칸을 하나씩 확인합니다. (기록은 저장되지 않아요)
-        </p>
-      )}
-
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl">
-        <div className="flex min-h-full items-start justify-center p-1">
-          <Board
-            state={game.state}
-            size={size}
-            input={input}
-            pendingCells={game.pendingCells}
-            focusCell={game.focusCell}
-            blockedCell={game.blockedCell}
-          />
-        </div>
+      <div className="game-status space-y-2">
+        <StatusBar
+          remaining={game.remaining}
+          elapsedMs={game.elapsed}
+          status={game.state.status}
+          pressing={input.pressed !== null}
+          onReset={() => game.reset()}
+        />
+        {explain && (
+          <p className="rounded-xl bg-sky-500/15 p-2 text-center text-xs font-bold text-sky-300">
+            원리 보기 모드 — 빈칸을 찾으면 이웃 8칸을 하나씩 확인합니다. (기록은 저장되지 않아요)
+          </p>
+        )}
       </div>
 
-      <ControlBar
-        flagMode={flagMode}
-        onToggleFlagMode={() => setFlagMode((previous) => !previous)}
-        onZoomIn={() => setZoom((value) => value + 4)}
-        onZoomOut={() => setZoom((value) => value - 4)}
-        canZoomIn={size < MAX_ZOOM}
-        canZoomOut={size > minSize}
-      />
+      <div
+        ref={boardAreaRef}
+        className="game-board flex items-center justify-center overflow-hidden"
+      >
+        <Board
+          state={game.state}
+          size={size}
+          input={input}
+          pendingCells={game.pendingCells}
+          focusCell={game.focusCell}
+          blockedCell={game.blockedCell}
+        />
+      </div>
+
+      <div className="game-control">
+        <ControlBar flagMode={flagMode} onToggleFlagMode={() => setFlagMode((previous) => !previous)} />
+      </div>
 
       <ResultModal
         open={finished && !game.animating}

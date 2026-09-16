@@ -49,6 +49,32 @@
       text-slate-100 placeholder:text-slate-500 focus:border-sky-400 focus:outline-none;
   }
 
+  /*
+   * 게임 화면 레이아웃.
+   * 세로 화면: 위에서 아래로 머리말 / 상태바 / 보드 / 조작바
+   * 낮은 화면(주로 스마트폰 가로): 왼쪽에 머리말·상태바·조작바, 오른쪽에 보드 (PRD 6.5)
+   * 보드가 항상 화면에 들어가도록 스크롤을 만들지 않는다.
+   */
+  .game-layout {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-areas: 'head' 'status' 'board' 'control';
+    grid-template-rows: auto auto 1fr auto;
+  }
+
+  @media (max-height: 560px) {
+    .game-layout {
+      grid-template-areas: 'head board' 'status board' 'control board';
+      grid-template-columns: 16rem 1fr;
+      grid-template-rows: auto auto 1fr;
+    }
+  }
+
+  .game-head { grid-area: head; }
+  .game-status { grid-area: status; }
+  .game-board { grid-area: board; min-width: 0; min-height: 0; }
+  .game-control { grid-area: control; }
+
   /* 상태바 숫자 (7세그먼트 느낌) */
   .lcd {
     @apply rounded-lg bg-slate-950 px-3 py-1 font-mono text-2xl font-bold tabular-nums text-rose-400;
