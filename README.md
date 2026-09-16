@@ -55,7 +55,7 @@ src/
    | 경로 | 내용 | 필수 |
    |---|---|---|
    | `config/secret` | `{ pin: "123456" }` — 교사 화면 핀 번호 | 필수 |
-   | `config/app` | `{ season: "2026-2", maskNames: true, gameOpen: true }` | 선택 |
+   | `config/app` | `{ season: "2026-2", gameOpen: true }` | 선택 |
 
    `config/app` 은 없으면 기본값으로 동작하고, 교사 화면에서 설정을 한 번 바꾸면 자동으로 만들어진다.
 
@@ -99,7 +99,7 @@ npm run test:rules
 ## 데이터 구조
 
 ```
-config/app                              앱 설정 (시즌, 이름 마스킹, 게임 열기)
+config/app                              앱 설정 (시즌, 게임 열기)
 config/secret                           교사 화면 핀 번호 (앱에서는 읽을 수 없음)
 teacherSessions/{uid}                   핀으로 연 교사 세션
 admins/{uid}                            교사 계정 (콘솔에서 직접 등록, 비상용)
@@ -132,7 +132,7 @@ records/{season}_{level}_{studentId}    학생별·난이도별 기록 (시즌�
 | 순위 초기화 | `/admin` → 시즌 값 변경 |
 | 교사 화면 핀 번호 변경 | Firebase 콘솔 → `config/secret` 의 `pin` (재배포 불필요) |
 | 수업 외 시간 차단 | `/admin` → 게임 열기 끄기 |
-| 이름 공개/마스킹 | `/admin` → 이름 마스킹 |
+| 이름 공개/가리기 | 대시보드 오른쪽 위 `👀 이름 보임 / 🙈 이름 가림` 버튼 (기기마다 따로 기억) |
 | 교실 TV 순위표 | `/dashboard?tv=1` (난이도 10초마다 자동 순환) |
 | 연쇄 열기 원리 시연 | 홈 → 설정 → 원리 보기 모드 (이 모드의 판은 기록하지 않음) |
 | 물음표 표시 끄기 (조작 단순화) | 홈 → 설정 → 물음표(?) 표시 |

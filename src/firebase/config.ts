@@ -21,7 +21,6 @@ export function subscribeAppConfig(
       const data = snapshot.data();
       onChange({
         season: typeof data?.season === 'string' ? data.season : DEFAULT_APP_CONFIG.season,
-        maskNames: typeof data?.maskNames === 'boolean' ? data.maskNames : DEFAULT_APP_CONFIG.maskNames,
         gameOpen: typeof data?.gameOpen === 'boolean' ? data.gameOpen : DEFAULT_APP_CONFIG.gameOpen,
       });
     },

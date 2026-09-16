@@ -158,19 +158,6 @@ export function Admin() {
       <section className="card space-y-3">
         <h2 className="font-bold">설정</h2>
         <label className="flex items-center justify-between">
-          <span>대시보드 이름 마스킹</span>
-          <input
-            type="checkbox"
-            className="h-6 w-6 accent-sky-500"
-            checked={config.maskNames}
-            onChange={(event) => {
-              void updateAppConfig({ maskNames: event.target.checked }).catch((error) =>
-                setMessage(error.message),
-              );
-            }}
-          />
-        </label>
-        <label className="flex items-center justify-between">
           <span>게임 열기</span>
           <input
             type="checkbox"

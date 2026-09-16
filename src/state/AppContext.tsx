@@ -22,6 +22,8 @@ export interface Settings {
   explain: boolean;
   /** 물음표(?) 표시: 깃발을 한 번 더 누르면 ❓ 가 된다. */
   questionMark: boolean;
+  /** 대시보드에서 참가자 이름을 가릴지. 기기마다 따로 기억한다. */
+  maskNames: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -29,6 +31,7 @@ const DEFAULT_SETTINGS: Settings = {
   vibrate: true,
   explain: false,
   questionMark: true,
+  maskNames: false,
 };
 
 interface AppContextValue {

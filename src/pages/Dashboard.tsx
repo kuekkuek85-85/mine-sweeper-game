@@ -13,7 +13,7 @@ import type { GameRecord } from '../types';
 const TV_ROTATE_MS = 10_000;
 
 export function Dashboard() {
-  const { student, config } = useApp();
+  const { student, config, settings, updateSettings } = useApp();
   const [params, setParams] = useSearchParams();
 
   const levelParam = params.get('level');
@@ -148,6 +148,21 @@ export function Dashboard() {
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          aria-pressed={settings.maskNames}
+          onClick={() => updateSettings({ maskNames: !settings.maskNames })}
+          title="교실 TV처럼 여러 사람이 보는 화면에서는 켜 두세요."
+          className={[
+            'min-h-[44px] rounded-lg border px-3 font-bold transition',
+            settings.maskNames
+              ? 'border-sky-400 bg-sky-500/20 text-sky-200'
+              : 'border-slate-600 bg-slate-800 text-slate-400',
+          ].join(' ')}
+        >
+          {settings.maskNames ? '🙈 이름 가림' : '👀 이름 보임'}
+        </button>
+
         <span className="ml-auto text-xs text-slate-500">시즌 {config.season}</span>
       </div>
 
@@ -178,7 +193,7 @@ export function Dashboard() {
             </span>
             <span className="w-12 shrink-0 text-sm text-slate-400">{record.classNo}반</span>
             <span className="flex-1 truncate font-bold">
-              {config.maskNames ? maskName(record.name) : record.name}
+              {settings.maskNames ? maskName(record.name) : record.name}
             </span>
             <span className="shrink-0 tabular-nums font-bold text-sky-300">
               {formatRecord(record.bestTimeMs)}
