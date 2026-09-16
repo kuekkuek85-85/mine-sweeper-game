@@ -57,6 +57,18 @@ export function maskName(name: string): string {
   return `${name[0]}${'○'.repeat(name.length - 2)}${name[name.length - 1]}`;
 }
 
+/**
+ * 순위표 이름 검색. 공백과 대소문자를 무시하고 부분 일치로 찾는다.
+ * 검색어가 비어 있으면 모두 통과시킨다.
+ *
+ * 이름이 가려져 있어도(이○엽) 원래 이름으로 찾을 수 있게, 비교는 항상 실제 이름으로 한다.
+ */
+export function matchesName(name: string, query: string): boolean {
+  const needle = query.replace(/\s+/g, '').toLowerCase();
+  if (needle === '') return true;
+  return name.replace(/\s+/g, '').toLowerCase().includes(needle);
+}
+
 export function formatDateTime(date: Date | null | undefined): string {
   if (!date) return '-';
   const pad = (n: number) => String(n).padStart(2, '0');
