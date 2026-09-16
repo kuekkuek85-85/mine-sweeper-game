@@ -7,6 +7,7 @@ import {
   isValidName,
   isValidStudentId,
   maskName,
+  matchesName,
   parseStudentId,
 } from './format';
 
@@ -49,6 +50,38 @@ describe('이름 규칙', () => {
     expect(isValidName('김')).toBe(false);
     expect(isValidName('Lee')).toBe(false);
     expect(isValidName('가나다라마바')).toBe(false);
+  });
+});
+
+describe('이름 검색', () => {
+  it('부분 일치로 찾는다', () => {
+    expect(matchesName('이승엽', '승')).toBe(true);
+    expect(matchesName('이승엽', '이승')).toBe(true);
+    expect(matchesName('이승엽', '승엽')).toBe(true);
+    expect(matchesName('이승엽', '김철수')).toBe(false);
+  });
+
+  it('검색어가 비어 있으면 모두 통과', () => {
+    expect(matchesName('이승엽', '')).toBe(true);
+    expect(matchesName('이승엽', '   ')).toBe(true);
+  });
+
+  it('공백은 무시한다', () => {
+    expect(matchesName('남궁 민수', '남궁민수')).toBe(true);
+    expect(matchesName('남궁민수', '남궁 민수')).toBe(true);
+    expect(matchesName('이승엽', ' 승엽 ')).toBe(true);
+  });
+
+  it('영문은 대소문자를 가리지 않는다', () => {
+    expect(matchesName('Lee', 'lee')).toBe(true);
+    expect(matchesName('lee', 'LEE')).toBe(true);
+  });
+
+  it('가려진 이름이 아니라 실제 이름으로 찾는다', () => {
+    // 화면에는 이○엽 으로 보여도 검색은 원래 이름 기준
+    const name = '이승엽';
+    expect(maskName(name)).toBe('이○엽');
+    expect(matchesName(name, '승엽')).toBe(true);
   });
 });
 

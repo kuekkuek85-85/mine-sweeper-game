@@ -5,7 +5,7 @@ import { firebaseEnabled } from '../firebase/app';
 import { DASHBOARD_LIMIT, fetchMyRank, subscribeRanking } from '../firebase/records';
 import { LEVELS, LEVEL_IDS, isLevelId, type LevelId } from '../game/levels';
 import { useMyRecords } from '../hooks/useMyRecords';
-import { formatRecord, maskName } from '../lib/format';
+import { formatRecord, maskName, matchesName } from '../lib/format';
 import { useApp } from '../state/AppContext';
 import type { GameRecord } from '../types';
 
@@ -23,6 +23,7 @@ export function Dashboard() {
   const tv = params.get('tv') === '1';
 
   const [records, setRecords] = useState<GameRecord[]>([]);
+  const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [myRank, setMyRank] = useState<number | null>(null);
 
@@ -90,6 +91,13 @@ export function Dashboard() {
 
   const classOptions = useMemo(() => Array.from({ length: 12 }, (_, index) => index + 1), []);
 
+  // 검색해도 등수는 원래 순위를 그대로 보여 준다.
+  const rows = useMemo(
+    () => records.map((record, index) => ({ record, rank: index })).filter(({ record }) => matchesName(record.name, query)),
+    [records, query],
+  );
+  const searching = query.trim() !== '';
+
   function updateParam(key: string, value: string | null) {
     setParams((previous) => {
       const updated = new URLSearchParams(previous);
@@ -129,6 +137,34 @@ export function Dashboard() {
             {LEVELS[id].label}
           </button>
         ))}
+      </div>
+
+      <div className="relative">
+        <label htmlFor="nameSearch" className="sr-only">
+          이름 검색
+        </label>
+        <input
+          id="nameSearch"
+          type="search"
+          className="input pl-10"
+          placeholder="내 이름 찾기"
+          autoComplete="off"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+          🔍
+        </span>
+        {searching && (
+          <button
+            type="button"
+            aria-label="검색어 지우기"
+            onClick={() => setQuery('')}
+            className="absolute right-2 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full text-slate-400 hover:bg-slate-700"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-2 text-sm">
@@ -179,17 +215,18 @@ export function Dashboard() {
       )}
 
       <ol className="space-y-1">
-        {records.map((record, index) => (
+        {rows.map(({ record, rank }) => (
           <li
             key={record.id}
             className={[
               'flex items-center gap-3 rounded-xl px-3 py-2',
               record.studentId === student?.studentId ? 'bg-sky-500/20' : 'bg-slate-800/60',
               movedIds.has(record.id) ? 'animate-highlight' : '',
+              searching ? 'ring-2 ring-amber-400' : '',
             ].join(' ')}
           >
             <span className="w-10 shrink-0 text-center font-extrabold tabular-nums text-slate-400">
-              {medal(index)}
+              {medal(rank)}
             </span>
             <span className="w-12 shrink-0 text-sm text-slate-400">{record.classNo}반</span>
             <span className="flex-1 truncate font-bold">
@@ -203,12 +240,22 @@ export function Dashboard() {
             </span>
           </li>
         ))}
-        {records.length === 0 && !error && firebaseEnabled && (
-          <li className="card text-center text-sm text-slate-400">아직 기록이 없어요. 첫 주인공이 되어 보세요!</li>
+        {rows.length === 0 && !error && firebaseEnabled && (
+          <li className="card text-center text-sm text-slate-400">
+            {searching
+              ? `"${query.trim()}" — 상위 ${DASHBOARD_LIMIT}명 안에 없어요.`
+              : '아직 기록이 없어요. 첫 주인공이 되어 보세요!'}
+          </li>
         )}
       </ol>
 
-      {records.length >= DASHBOARD_LIMIT && (
+      {searching && rows.length > 0 && (
+        <p className="text-center text-xs text-slate-400">
+          {rows.length}명 찾았어요. (상위 {DASHBOARD_LIMIT}명 안에서 찾습니다)
+        </p>
+      )}
+
+      {!searching && records.length >= DASHBOARD_LIMIT && (
         <p className="text-center text-xs text-slate-500">상위 {DASHBOARD_LIMIT}명까지 표시합니다.</p>
       )}
 
