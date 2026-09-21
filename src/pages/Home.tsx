@@ -4,10 +4,11 @@ import { firebaseEnabled } from '../firebase/app';
 import { LEVELS, LEVEL_IDS } from '../game/levels';
 import { useMyRecords } from '../hooks/useMyRecords';
 import { formatRecord } from '../lib/format';
+import { describeNextOpen } from '../lib/schedule';
 import { useApp } from '../state/AppContext';
 
 export function Home() {
-  const { student, clearStudent, settings, updateSettings, config } = useApp();
+  const { student, clearStudent, settings, updateSettings, config, access } = useApp();
   const navigate = useNavigate();
   const records = useMyRecords(config.season, student?.studentId);
 
@@ -32,9 +33,12 @@ export function Home() {
         </button>
       </header>
 
-      {!config.gameOpen && (
+      {!access.open && (
         <p className="rounded-xl bg-amber-500/15 p-3 text-center text-sm font-bold text-amber-300">
-          지금은 게임이 닫혀 있어요. 수업 시간에 다시 해 보세요.
+          지금은 게임이 닫혀 있어요.
+          {access.nextOpenAt
+            ? ` 다음 열림: ${describeNextOpen(access.nextOpenAt, new Date())}`
+            : ' 수업 시간에 다시 해 보세요.'}
         </p>
       )}
 
@@ -53,10 +57,13 @@ export function Home() {
             <Link
               key={id}
               to={`/game/${id}`}
-              className="card flex items-center justify-between transition hover:border-sky-400"
-              aria-disabled={!config.gameOpen}
+              className={[
+                'card flex items-center justify-between transition hover:border-sky-400',
+                access.open ? '' : 'pointer-events-none opacity-40',
+              ].join(' ')}
+              aria-disabled={!access.open}
               onClick={(event) => {
-                if (!config.gameOpen) event.preventDefault();
+                if (!access.open) event.preventDefault();
               }}
             >
               <div>

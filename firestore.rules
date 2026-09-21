@@ -16,6 +16,36 @@ service cloud.firestore {
       return {'beginner': 1000, 'intermediate': 3000, 'expert': 8000}[level];
     }
 
+    // ── 접속 허용 시간 ────────────────────────────────────────────────
+    // 선생님 화면의 "접속 허용" 설정을 서버에서도 확인한다.
+    // 학생 화면만 막으면 기기 시계를 바꿔서 넘어갈 수 있기 때문이다.
+    //
+    // 규칙 언어에는 반복문이 없어서 시간대(09:00~09:45)를 그대로 볼 수 없다.
+    // 대신 앱이 허용 시간대를 5분 조각으로 펼쳐 config/app.slots 에 넣어 두고,
+    // 여기서는 "지금 조각이 그 목록에 있는가"만 확인한다. (src/lib/schedule.ts)
+    //
+    // 조각은 앱이 UTC 로 옮겨서 저장한다. 그래서 여기서 시차를 다루지 않아도 되고,
+    // 선생님이 어느 시간대에서 설정하든 서버 판단이 화면과 같아진다.
+    function accessSlotNow() {
+      // dayOfWeek() 는 1(월)~7(일) 이라 JS 의 0(일)~6(토) 에 맞춘다.
+      return (request.time.dayOfWeek() % 7) * 10000
+        + request.time.hours() * 100
+        + (request.time.minutes() / 5) * 5;
+    }
+
+    function accessAllowedBy(cfg) {
+      // accessMode 가 없던 시절의 문서는 gameOpen 만 보고 판단한다.
+      let mode = cfg.get('accessMode', cfg.get('gameOpen', true) ? 'open' : 'closed');
+      return mode == 'open'
+        || (mode == 'schedule' && cfg.get('slots', []).hasAny([accessSlotNow()]));
+    }
+
+    // config/app 이 아예 없으면 열어 둔다. 설정 전에도 수업을 할 수 있어야 한다.
+    function accessAllowed() {
+      let snap = get(/databases/$(db)/documents/config/app);
+      return snap == null || accessAllowedBy(snap.data);
+    }
+
     // config/secret 은 교사 핀이 들어 있어 아무도 읽고 쓸 수 없다. (콘솔에서만 관리)
     // 보안 규칙 안의 get() 은 읽기 권한과 상관없이 값을 볼 수 있어서 대조가 가능하다.
     match /config/{doc} {
@@ -59,7 +89,8 @@ service cloud.firestore {
         return get(/databases/$(db)/documents/students/$(d().studentId)).data.name;
       }
       function common() {
-        return recordId == d().season + '_' + d().level + '_' + d().studentId
+        return accessAllowed()
+          && recordId == d().season + '_' + d().level + '_' + d().studentId
           && d().level in ['beginner', 'intermediate', 'expert']
           && d().name == registeredName()
           && d().updatedAt == request.time
