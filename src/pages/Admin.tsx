@@ -4,16 +4,30 @@ import type { User } from 'firebase/auth';
 
 import { firebaseEnabled } from '../firebase/app';
 import { isTeacher, lockTeacher, subscribeUser, unlockTeacher } from '../firebase/auth';
-import { updateAppConfig } from '../firebase/config';
+import { updateAccess, updateAppConfig } from '../firebase/config';
 import { deleteRecord, deleteSeasonRecords, listRecordsBySeason } from '../firebase/records';
 import { deleteStudent, listStudents, updateStudentName, type StudentRow } from '../firebase/students';
 import { LEVELS } from '../game/levels';
 import { formatDateTime, formatRecord, isValidName } from '../lib/format';
+import {
+  DAY_LABELS,
+  describeNextOpen,
+  isValidWindow,
+  newWindowId,
+  type AccessMode,
+  type AccessWindow,
+} from '../lib/schedule';
 import { useApp } from '../state/AppContext';
 import type { GameRecord } from '../types';
 
+const MODE_OPTIONS: { value: AccessMode; label: string; hint: string }[] = [
+  { value: 'open', label: '항상 허용', hint: '언제든 게임을 할 수 있습니다.' },
+  { value: 'schedule', label: '시간표대로', hint: '아래에 정해 둔 요일·시간에만 열립니다.' },
+  { value: 'closed', label: '항상 차단', hint: '아무도 게임을 시작할 수 없습니다.' },
+];
+
 export function Admin() {
-  const { config } = useApp();
+  const { config, access } = useApp();
   const [user, setUser] = useState<User | null>(null);
   const [admin, setAdmin] = useState<boolean | null>(null);
   const [pin, setPin] = useState('');
@@ -24,7 +38,32 @@ export function Admin() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  // 접속 허용 설정은 고치는 중에 다른 기기의 변경으로 덮이지 않도록 초안으로 들고 있는다.
+  const [draft, setDraft] = useState({ mode: config.accessMode, windows: config.windows });
+  const [dirty, setDirty] = useState(false);
+
   useEffect(() => setSeason(config.season), [config.season]);
+
+  useEffect(() => {
+    if (dirty) return;
+    setDraft({ mode: config.accessMode, windows: config.windows });
+  }, [config.accessMode, config.windows, dirty]);
+
+  const saveAccess = useCallback((mode: AccessMode, windows: AccessWindow[]) => {
+    setDraft({ mode, windows });
+    setDirty(false);
+    void updateAccess(mode, windows)
+      .then(() => setMessage('접속 허용 설정을 저장했습니다.'))
+      .catch((error: Error) => setMessage(error.message));
+  }, []);
+
+  const patchWindow = useCallback((id: string, patch: Partial<AccessWindow>) => {
+    setDirty(true);
+    setDraft((previous) => ({
+      ...previous,
+      windows: previous.windows.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    }));
+  }, []);
 
   useEffect(
     () =>
@@ -156,20 +195,97 @@ export function Admin() {
       )}
 
       <section className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold">접속 허용</h2>
+          <span
+            className={[
+              'rounded-full px-3 py-1 text-sm font-bold',
+              access.open ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300',
+            ].join(' ')}
+          >
+            지금 {access.open ? '🟢 열림' : '🔴 닫힘'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {MODE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={draft.mode === option.value}
+              className={[
+                'btn text-sm',
+                draft.mode === option.value
+                  ? 'bg-sky-500 text-white ring-4 ring-sky-400/40'
+                  : 'bg-slate-700 text-slate-200',
+              ].join(' ')}
+              onClick={() => saveAccess(option.value, draft.windows)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <p className="text-xs text-slate-400">
+          {MODE_OPTIONS.find((option) => option.value === draft.mode)?.hint}
+          {!access.open && access.nextOpenAt && ` 다음 열림: ${describeNextOpen(access.nextOpenAt, new Date())}`}
+        </p>
+
+        {draft.mode === 'schedule' && (
+          <div className="space-y-3 rounded-xl bg-slate-900/40 p-3">
+            {draft.windows.length === 0 && (
+              <p className="rounded-xl bg-amber-500/15 p-3 text-sm font-bold text-amber-300">
+                허용 시간대가 없어서 계속 닫혀 있습니다. 아래에서 시간대를 추가하세요.
+              </p>
+            )}
+
+            {draft.windows.map((item) => (
+              <WindowRow
+                key={item.id}
+                value={item}
+                onChange={(patch) => patchWindow(item.id, patch)}
+                onRemove={() => {
+                  setDirty(true);
+                  setDraft((previous) => ({
+                    ...previous,
+                    windows: previous.windows.filter((row) => row.id !== item.id),
+                  }));
+                }}
+              />
+            ))}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn-ghost flex-1 text-sm"
+                onClick={() => {
+                  setDirty(true);
+                  setDraft((previous) => ({
+                    ...previous,
+                    windows: [
+                      ...previous.windows,
+                      { id: newWindowId(), days: [1, 2, 3, 4, 5], start: '09:00', end: '09:45', label: '' },
+                    ],
+                  }));
+                }}
+              >
+                + 시간대 추가
+              </button>
+              <button
+                type="button"
+                className="btn-primary flex-1 text-sm"
+                disabled={!dirty || !draft.windows.every(isValidWindow)}
+                onClick={() => saveAccess(draft.mode, draft.windows)}
+              >
+                {dirty ? '시간표 저장' : '저장됨'}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="card space-y-3">
         <h2 className="font-bold">설정</h2>
-        <label className="flex items-center justify-between">
-          <span>게임 열기</span>
-          <input
-            type="checkbox"
-            className="h-6 w-6 accent-sky-500"
-            checked={config.gameOpen}
-            onChange={(event) => {
-              void updateAppConfig({ gameOpen: event.target.checked }).catch((error) =>
-                setMessage(error.message),
-              );
-            }}
-          />
-        </label>
 
         <div className="flex items-end gap-2">
           <div className="flex-1">
@@ -337,6 +453,86 @@ export function Admin() {
         </div>
       </section>
     </Shell>
+  );
+}
+
+/** 허용 시간대 한 줄: 요일 고르기 + 시작·끝 시각 + 메모 */
+function WindowRow({
+  value,
+  onChange,
+  onRemove,
+}: {
+  value: AccessWindow;
+  onChange: (patch: Partial<AccessWindow>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-xl border border-slate-700 p-3">
+      <div className="flex flex-wrap gap-1">
+        {DAY_LABELS.map((label, day) => {
+          const on = value.days.includes(day);
+          return (
+            <button
+              key={label}
+              type="button"
+              aria-pressed={on}
+              aria-label={`${label}요일`}
+              className={[
+                'h-9 w-9 rounded-lg text-sm font-bold',
+                on ? 'bg-sky-500 text-white' : 'bg-slate-700 text-slate-400',
+              ].join(' ')}
+              onClick={() =>
+                onChange({
+                  days: on
+                    ? value.days.filter((item) => item !== day)
+                    : [...value.days, day].sort((a, b) => a - b),
+                })
+              }
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="time"
+          className="input flex-1"
+          aria-label="시작 시각"
+          value={value.start}
+          onChange={(event) => onChange({ start: event.target.value })}
+        />
+        <span className="text-slate-500">–</span>
+        <input
+          type="time"
+          className="input flex-1"
+          aria-label="끝 시각"
+          value={value.end}
+          onChange={(event) => onChange({ end: event.target.value })}
+        />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          className="input flex-1 text-sm"
+          aria-label="메모"
+          placeholder="메모 (예: 1학년 3반)"
+          maxLength={20}
+          value={value.label}
+          onChange={(event) => onChange({ label: event.target.value })}
+        />
+        <button type="button" className="px-2 text-sm text-rose-400 underline" onClick={onRemove}>
+          삭제
+        </button>
+      </div>
+
+      {!isValidWindow(value) && (
+        <p className="text-xs font-bold text-rose-300">
+          요일을 하나 이상 고르고, 끝 시각을 시작보다 늦게 맞춰 주세요. (자정을 넘을 수는 없습니다)
+        </p>
+      )}
+    </div>
   );
 }
 

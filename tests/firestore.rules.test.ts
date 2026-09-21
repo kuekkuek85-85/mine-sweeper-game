@@ -12,7 +12,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const SEASON = '2026-2';
@@ -243,7 +243,6 @@ describe('records — 부정 방지', () => {
         updatedAt: new Date(),
       });
     });
-    const { deleteDoc } = await import('firebase/firestore');
     await assertFails(deleteDoc(doc(studentDb(), 'records', recordId('beginner'))));
     await assertSucceeds(deleteDoc(doc(adminDb(), 'records', recordId('beginner'))));
   });
@@ -353,6 +352,122 @@ describe('교사 핀 번호 인증', () => {
     const { deleteDoc } = await import('firebase/firestore');
     await assertSucceeds(deleteDoc(doc(db, 'teacherSessions', 'anon-7')));
     await assertFails(updateDoc(doc(db, 'config', 'app'), { gameOpen: false }));
+  });
+});
+
+/**
+ * 접속 허용 시간대.
+ *
+ * 규칙은 `request.time`(서버 UTC)으로 5분 조각을 만들어 `config/app.slots` 에 있는지 본다.
+ * 앱도 조각을 UTC 로 옮겨서 저장하므로, 테스트도 UTC 로 센다.
+ * (컨테이너의 표준 시간대에 영향받지 않는다)
+ */
+function utcSlot(offsetMinutes = 0): number {
+  const at = new Date(Date.now() + offsetMinutes * 60_000);
+  return at.getUTCDay() * 10_000 + at.getUTCHours() * 100 + Math.floor(at.getUTCMinutes() / 5) * 5;
+}
+
+async function writeAppConfig(data: Record<string, unknown> | null) {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const ref = doc(context.firestore(), 'config', 'app');
+    if (data === null) await deleteDoc(ref);
+    else await setDoc(ref, data);
+  });
+}
+
+describe('접속 허용 시간', () => {
+  it('항상 허용이면 저장된다', async () => {
+    await writeAppConfig({ season: SEASON, accessMode: 'open' });
+    await assertSucceeds(setDoc(doc(studentDb(), 'records', recordId('beginner')), recordData()));
+  });
+
+  it('항상 차단이면 저장되지 않는다', async () => {
+    await writeAppConfig({ season: SEASON, accessMode: 'closed' });
+    await assertFails(setDoc(doc(studentDb(), 'records', recordId('beginner')), recordData()));
+  });
+
+  it('차단 중에는 기존 기록도 갱신되지 않는다', async () => {
+    const db = studentDb();
+    await setDoc(doc(db, 'records', recordId('beginner')), recordData());
+    await writeAppConfig({ season: SEASON, accessMode: 'closed' });
+    await assertFails(
+      updateDoc(doc(db, 'records', recordId('beginner')), {
+        plays: 2,
+        wins: 2,
+        bestTimeMs: 9_000,
+        bestAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('시간표 모드에서 지금이 허용 시간이면 저장된다', async () => {
+    await writeAppConfig({
+      season: SEASON,
+      accessMode: 'schedule',
+      // 5분 경계에 걸쳐도 흔들리지 않게 앞뒤 조각을 함께 넣는다.
+      slots: [utcSlot(-5), utcSlot(0), utcSlot(5)],
+    });
+    await assertSucceeds(setDoc(doc(studentDb(), 'records', recordId('beginner')), recordData()));
+  });
+
+  it('시간표 모드에서 지금이 허용 시간이 아니면 저장되지 않는다', async () => {
+    await writeAppConfig({
+      season: SEASON,
+      accessMode: 'schedule',
+      // 이틀 뒤 같은 시각 — 요일이 다르므로 지금은 절대 걸리지 않는다.
+      slots: [utcSlot(2 * 24 * 60)],
+    });
+    await assertFails(setDoc(doc(studentDb(), 'records', recordId('beginner')), recordData()));
+  });
+
+  it('시간표 모드인데 허용 시간대가 하나도 없으면 저장되지 않는다', async () => {
+    await writeAppConfig({ season: SEASON, accessMode: 'schedule', slots: [] });
+    await assertFails(setDoc(doc(studentDb(), 'records', recordId('beginner')), recordData()));
+  });
+
+  it('accessMode 가 없는 예전 문서는 gameOpen 을 따른다', async () => {
+    await writeAppConfig({ season: SEASON, gameOpen: false });
+    await assertFails(setDoc(doc(studentDb(), 'records', recordId('beginner')), recordData()));
+
+    await writeAppConfig({ season: SEASON, gameOpen: true });
+    await assertSucceeds(setDoc(doc(studentDb(), 'records', recordId('beginner')), recordData()));
+  });
+
+  it('config/app 이 아예 없으면 막지 않는다', async () => {
+    await writeAppConfig(null);
+    await assertSucceeds(setDoc(doc(studentDb(), 'records', recordId('beginner')), recordData()));
+  });
+
+  it('차단 중에도 순위표는 읽을 수 있다', async () => {
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'records', recordId('beginner')), recordData({ bestAt: new Date(), updatedAt: new Date() }));
+    });
+    await writeAppConfig({ season: SEASON, accessMode: 'closed' });
+    await assertSucceeds(getDoc(doc(studentDb(), 'records', recordId('beginner'))));
+  });
+
+  it('차단 중에도 학생 등록은 된다', async () => {
+    await writeAppConfig({ season: SEASON, accessMode: 'closed' });
+    await assertSucceeds(
+      setDoc(doc(studentDb(), 'students', '10404'), { name: '정서원', classNo: 4, createdAt: serverTimestamp() }),
+    );
+  });
+
+  it('교사는 차단·허용 설정을 바꿀 수 있다', async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(adminDb(), 'config', 'app'),
+        { accessMode: 'schedule', slots: [10900], windows: [], gameOpen: true },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('학생은 차단 설정을 바꿀 수 없다', async () => {
+    await assertFails(
+      setDoc(doc(studentDb(), 'config', 'app'), { accessMode: 'open' }, { merge: true }),
+    );
   });
 });
 

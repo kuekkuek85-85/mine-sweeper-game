@@ -38,7 +38,7 @@ const BOARD_CHROME = 10;
 export function Game() {
   const { level: levelParam } = useParams();
   const navigate = useNavigate();
-  const { student, settings, config, setQueuedCount } = useApp();
+  const { student, settings, config, access, setQueuedCount } = useApp();
 
   const [flagMode, setFlagMode] = useState(false);
   // 보드가 들어갈 영역의 실제 크기. 여기에 맞춰 칸 크기를 정한다.
@@ -161,6 +161,8 @@ export function Game() {
   }, [reset]);
 
   if (!level) return <Navigate to="/home" replace />;
+  // 주소를 직접 쳐서 들어오는 길도 막는다. 게임 중에 닫히면 그 자리에서 홈으로 나간다.
+  if (!access.open) return <Navigate to="/home" replace />;
 
   const spec = LEVELS[level];
   const finished = game.state.status === 'won' || game.state.status === 'lost';

@@ -12,6 +12,7 @@ import {
 
 import { subscribeAppConfig } from '../firebase/config';
 import { startQueueAutoFlush } from '../firebase/queue';
+import { isOpenAt, nextOpenAt } from '../lib/schedule';
 import { readJson, removeKey, writeJson } from '../lib/storage';
 import { DEFAULT_APP_CONFIG, type AppConfig, type Student } from '../types';
 
@@ -34,6 +35,13 @@ const DEFAULT_SETTINGS: Settings = {
   maskNames: false,
 };
 
+/** 지금 게임을 할 수 있는지. 시간표 모드면 1분 안에 저절로 바뀐다. */
+export interface AccessState {
+  open: boolean;
+  /** 닫혀 있고 시간표가 잡혀 있을 때만 채워진다. */
+  nextOpenAt: Date | null;
+}
+
 interface AppContextValue {
   student: Student | null;
   setStudent: (student: Student) => void;
@@ -41,9 +49,13 @@ interface AppContextValue {
   settings: Settings;
   updateSettings: (patch: Partial<Settings>) => void;
   config: AppConfig;
+  access: AccessState;
   queuedCount: number;
   setQueuedCount: (count: number) => void;
 }
+
+/** 시간표 모드에서 시간대 경계를 얼마나 촘촘히 확인할지 */
+const ACCESS_TICK_MS = 20_000;
 
 const AppContext = createContext<AppContextValue | null>(null);
 
@@ -57,7 +69,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG);
   const [queuedCount, setQueuedCount] = useState(0);
 
+  // 시간표 모드에서만 시계를 돌린다. 켜고 끄기만 쓰는 학급은 다시 그릴 일이 없다.
+  const [tick, setTick] = useState(() => Date.now());
+
   useEffect(() => subscribeAppConfig(setConfig), []);
+
+  useEffect(() => {
+    // 설정이 바뀌는 순간에는 오래된 시각으로 판단하지 않도록 한 번 맞춰 둔다.
+    setTick(Date.now());
+    if (config.accessMode !== 'schedule') return;
+    const timer = window.setInterval(() => setTick(Date.now()), ACCESS_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [config.accessMode, config.windows]);
+
+  const access = useMemo<AccessState>(() => {
+    const at = new Date(tick);
+    const open = isOpenAt(config.accessMode, config.windows, at);
+    return { open, nextOpenAt: open ? null : nextOpenAt(config.accessMode, config.windows, at) };
+  }, [config.accessMode, config.windows, tick]);
 
   useEffect(() => startQueueAutoFlush(() => setQueuedCount(0)), []);
 
@@ -87,10 +116,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       settings,
       updateSettings,
       config,
+      access,
       queuedCount,
       setQueuedCount,
     }),
-    [student, setStudent, clearStudent, settings, updateSettings, config, queuedCount],
+    [student, setStudent, clearStudent, settings, updateSettings, config, access, queuedCount],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
